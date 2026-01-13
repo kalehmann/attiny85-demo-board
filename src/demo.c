@@ -29,7 +29,7 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-void init_input(uint8_t pin) {
+void init_input(uint8_t pin, bool toggle_pullup) {
         /*
          * Data Direction Register port B (DDRB)
          *
@@ -45,14 +45,38 @@ void init_input(uint8_t pin) {
         }
 
         DDRB &= ~(1 << pin);
+
+        /*
+         * MCU Control Register (MCUCR)
+         *
+         * ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+         * │ 7     │ 6     │ 5     │ 4     │ 3     │ 2     │ 1     │ 0     │
+         * ├───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┤
+         * │ BODS  │ PUD   │ SE    │ SM1   │ SM0   │ BODSE │ ISC01 │ ISC00 │
+         * └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
+         * PUD: Pull-up disable, ignores pull-up-resistor configuration if set to one.
+         */
+        MCUCR &= ~(1 << PUD);
+
+        /*
+         * Port B Data Register (PORTB)
+         * Bits 0 to 5 correspond to pins 0 to 5 and enable the internal pull-up
+         * resistor if the pin is configured as output
+         */
+
+        if (toggle_pullup) {
+                PORTB |= (1 << pin);
+        } else {
+                PORTB &= ~(1 << pin);
+        }
 }
 
 void init_output(uint8_t pin) {
-        // See init_input
         if (pin > 5) {
                 return;
         }
 
+        // See init_input for DDRB description
         DDRB |= (1 << pin);
 }
 
@@ -61,6 +85,11 @@ bool read_pin(uint8_t pin) {
 }
 
 void write_pin(uint8_t pin, bool high) {
+        /*
+         * Port B Data Register (PORTB)
+         * Bits 0 to 5 correspond to pins 0 to 5 and set the pin high or low if
+         * the pin is configured as output.
+         */
         if (high) {
                 PORTB |= (1 << pin);
         } else {
@@ -74,7 +103,7 @@ int main(void) {
         init_output(0);
         init_output(1);
         init_output(3);
-        init_input(4);
+        init_input(4, false);
 
         while (1) {
                 if (!read_pin(4)) {
