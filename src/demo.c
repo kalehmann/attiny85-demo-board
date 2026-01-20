@@ -29,6 +29,101 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
+void init_adc(uint8_t pin) {
+        /*
+         * ADC Control and Status Register A (ADCSRA)
+         *
+         * ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+         * │ 7     │ 6     │ 5     │ 4     │ 3     │ 2     │ 1     │ 0     │
+         * ├───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┤
+         * │ ADEN  │ ADSC  │ ADATE │ ADIF  │ ADIE  │ ADPS2 │ ADPS1 │ ADPS0 │
+         * └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
+         *
+         * ADEN: Enable ADC
+         * ADSC: Start conversion (reset to zero by hardware)
+         * ADATE: Automatically trigger ADC conversion
+         * ADIF: ADC interrupt flag
+         * ADIE: ADC interrupt enable
+         * ADPS0, ADPS1, ADPS2: Prescaler selection for ADC clock frequency
+         */
+        ADCSRA |= (1 << ADEN)
+                | (1 << ADSC)
+                | (1 << ADATE);
+
+        /*
+         * ADC Multiplexer Selection Register
+         *
+         * ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+         * │ 7     │ 6     │ 5     │ 4     │ 3     │ 2     │ 1     │ 0     │
+         * ├───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┤
+         * │ REFS1 │ REFS0 │ ADLAR │ REFS2 │ MUX3  │ MUX2  │ MUX1  │ MUX0  │
+         * └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
+         *
+         * ADLAR: If set, data is stored left shifted in ADCH and ADCL, otherwise
+         *        right shifted.
+         * REFS0, REFS1, REFS2: reference voltage selection. Some important values:
+         *                      ┌───────┬───────┬───────┬─────────────┐
+         *                      │ REFS2 │ REFS1 │ REFS0 │             │
+         *                      ├───────┼───────┼───────┼─────────────┤
+         *                      │       │ 0     │ 0     │ VCC         │
+         *                      ├───────┼───────┼───────┼─────────────┤
+         *                      │       │ 0     │ 1     │ PB0 (AREF)  │
+         *                      ├───────┼───────┼───────┼─────────────┤
+         *                      │ 0     │ 1     │ 0     │ 1.1V        │
+         *                      └───────┴───────┴───────┴─────────────┘
+         * MUX0, MUX1, MUX2, MUX3: ADC Channel selection. Some important values:
+         *                         ┌───────┬───────┬───────┬───────┬───────┐
+         *                         │ MUX3  │ MUX2  │ MUX1  │ MUX0  │       │
+         *                         ├───────┼───────┼───────┼───────┼───────┤
+         *                         │ 0     │ 0     │ 0     │ 0     │ PB5   │
+         *                         ├───────┼───────┼───────┼───────┼───────┤
+         *                         │ 0     │ 0     │ 0     │ 1     │ PB2   │
+         *                         ├───────┼───────┼───────┼───────┼───────┤
+         *                         │ 0     │ 0     │ 1     │ 0     │ PB4   │
+         *                         ├───────┼───────┼───────┼───────┼───────┤
+         *                         │ 0     │ 0     │ 1     │ 1     │ PB3   │
+         *                         └───────┴───────┴───────┴───────┴───────┘
+         */
+        switch (pin) {
+        case 2:
+                ADMUX = (1 << MUX0);
+                break;
+        case 3:
+                ADMUX = (1 << MUX1) | (1 << MUX0);
+                break;
+        case 4:
+                ADMUX = (1 << MUX1);
+                break;
+        case 5:
+                ADMUX = 0;
+                break;
+        }
+
+        /*
+         * ADC Control and Status Register B (ADCSRB)
+         *
+         * ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+         * │ 7     │ 6     │ 5     │ 4     │ 3     │ 2     │ 1     │ 0     │
+         * ├───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┤
+         * │       │ ACME  │       │       │       │ ADTS2 │ ADTS1 │ ADTS0 │
+         * └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
+         *
+         * ACME: Analog Comparator Multiplexer Enable (only relevant when ADEN is
+         *       zero)
+         * ADTS0, ADTS1, ADTS2: ADC Auto Trigger Source. Some important values:
+         *                      ┌───────┬───────┬───────┬───────────────────┐
+         *                      │ ADTS2 │ ADTS1 │ ADTS0 │                   │
+         *                      ├───────┼───────┼───────┼───────────────────┤
+         *                      │ 0     │ 0     │ 0     │ Free running mode │
+         *                      ├───────┼───────┼───────┼───────────────────┤
+         *                      │ 0     │ 0     │ 1     │ Analog comparator │
+         *                      └───────┴───────┴───────┴───────────────────┘
+         *                      Free running mode means next conversion is started
+         *                      Automatically
+         */
+        ADCSRB = 0;
+}
+
 void init_input(uint8_t pin, bool toggle_pullup) {
         /*
          * Data Direction Register port B (DDRB)
@@ -80,6 +175,13 @@ void init_output(uint8_t pin) {
         DDRB |= (1 << pin);
 }
 
+uint16_t read_adc(void) {
+	unsigned int adc_l = ADCL;
+	unsigned int adc_h = ADCH;
+
+	return (adc_h << 8) | adc_l;
+}
+
 bool read_pin(uint8_t pin) {
         return (PINB & (1 << pin)) != 0;
 }
@@ -101,6 +203,7 @@ int main(void) {
         bool led_state = false;
 
         init_output(0);
+        init_adc(2);
         init_output(1);
         init_output(3);
         init_input(4, false);
@@ -110,8 +213,8 @@ int main(void) {
                         led_state = !led_state;
                         write_pin(0, led_state);
                         write_pin(1, led_state);
-                        write_pin(3, led_state);
                 }
+                write_pin(3, read_adc() > 512);
                 _delay_ms(50);
         }
 
