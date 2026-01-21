@@ -279,10 +279,10 @@ void init_output(uint8_t pin) {
 }
 
 uint16_t read_adc(void) {
-	unsigned int adc_l = ADCL;
-	unsigned int adc_h = ADCH;
+        unsigned int adc_l = ADCL;
+        unsigned int adc_h = ADCH;
 
-	return (adc_h << 8) | adc_l;
+        return (adc_h << 8) | adc_l;
 }
 
 bool read_pin(uint8_t pin) {
