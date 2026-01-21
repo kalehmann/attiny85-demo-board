@@ -124,6 +124,109 @@ void init_adc(uint8_t pin) {
         ADCSRB = 0;
 }
 
+void init_fast_pwm(bool enableOC0A, bool enableOC0B) {
+        /*
+         * General Timer/Counter Control Register (GTCCR)
+         *
+         * ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+         * │ 7     │ 6     │ 5     │ 4     │ 3     │ 2     │ 1     │ 0     │
+         * ├───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┤
+         * │ TSM   │       │       │       │       │       │       │ PSR0  │
+         * └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
+         *
+         * TSM: Timer/Counter Synchronization Mode. When set to one, the value
+         *      in PSR0 is kept.
+         * PSR0: Prescaler Reset Timer/Counter 0. When set to one, the timer or
+         *       counter is reset. This is automatically cleared except when TSM
+         *       is set.
+         */
+
+
+        // Disable timer during configuration
+        GTCCR |= (1 << TSM) | (1 << PSR0);
+
+        /*
+         * Timer/Counter Control Register A (TCCR0A)
+         *
+         * ┌────────┬────────┬────────┬────────┬─────┬─────┬───────┬───────┐
+         * │ 7      │ 6      │ 5      │ 4      │ 3   │ 2   │ 1     │ 0     │
+         * ├────────┼────────┼────────┼────────┼─────┼─────┼───────┼───────┤
+         * │ COM0A1 │ COM0A0 │ COM0B1 │ COM0B0 │     │     │ WGM01 │ WGM00 │
+         * └────────┴────────┴────────┴────────┴─────┴─────┴───────┴───────┘
+         *
+         * Timer/Counter Control Register B (TCCR0B)
+         *
+         * ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
+         * │ 7     │ 6     │ 5     │ 4     │ 3     │ 2     │ 1     │ 0     │
+         * ├───────┼───────┼───────┼───────┼───────┼───────┼───────┼───────┤
+         * │ FOC0A │ FOC0B │       │       │ WGM02 │ CS02  │ CS01  │ CS00  │
+         * └───────┴───────┴───────┴───────┴───────┴───────┴───────┴───────┘
+         *
+         * WGM00, WGM01, WGM02: Waveform Generation Mode. Some important values:
+         *                      ┌───────┬───────┬───────┬───────────────────┐
+         *                      │ WGM02 │ WGM01 │ WGM00 │                   │
+         *                      ├───────┼───────┼───────┼───────────────────┤
+         *                      │ 0     │ 0     │ 0     │ Normal mode       │
+         *                      ├───────┼───────┼───────┼───────────────────┤
+         *                      │ 0     │ 0     │ 1     │ Phase correct PWM │
+         *                      ├───────┼───────┼───────┼───────────────────┤
+         *                      │ 0     │ 1     │ 1     │ Fast PWM to 0xFF  │
+         *                      └───────┴───────┴───────┴───────────────────┘
+         *
+         *                      In Fast PWM mode, the counter counts continuously
+         *                      from 0 to 0xFF and then resets.
+         *
+         * COM0A1, COMA0: Compare Output Mode for OC0A
+         * COM0B1, COMB0: Compare Output Mode for OC0B
+         *                Configuration in Fast PWM:
+         *                ┌────────┬────────┬───────────────────────┐
+         *                │ COM0*1 │ COM0*0 │                       │
+         *                ├────────┼────────┼───────────────────────┤
+         *                │ 0      │ 0      │ Normal port operation │
+         *                ├────────┼────────┼───────────────────────┤
+         *                │ 1      │ 0      │ Non inverting mode    │
+         *                ├────────┼────────┼───────────────────────┤
+         *                │ 0      │ 1      │ Inverting mode        │
+         *                └────────┴────────┴───────────────────────┘
+         *
+         *                Non inverting mode means, the port is set high when the
+         *                counter is reset to zero and is set low when the
+         *                counter matches the value in OCR0*. That means, the
+         *                duty cycle is OCR0* / 0xFF.
+         *
+         *                In inverting mode, the port is set high when the
+         *                counter matches the value in OCR0* and low when the
+         *                counter resets.
+         *
+         * CS02, CS01, CS00: Clock select. Important values:
+         *                   ┌──────┬──────┬──────┬──────────────────────────┐
+         *                   │ CS02 │ CS01 │ CS00 │                          │
+         *                   ├──────┼──────┼──────┼──────────────────────────┤
+         *                   │ 0    │ 0    │ 0    │ No clock, timer stopped  │
+         *                   ├──────┼──────┼──────┼──────────────────────────┤
+         *                   │ 0    │ 0    │ 1    │ I/O clock, no prescaling │
+         *                   └──────┴──────┴──────┴──────────────────────────┘
+         */
+
+        // Set Fast PWM mode
+        TCCR0A = (1 << WGM01) | (1 << WGM00);
+
+        if (enableOC0A) {
+                // Set OC0A to non inverting mode
+                TCCR0A |= (1 << COM0A1);
+        }
+        if (enableOC0B) {
+                // Set OC0B to non inverting mode
+                TCCR0A |= (1 << COM0B1);
+        }
+
+        // Use I/O clock without prescaling
+        TCCR0B = (1 << CS00);
+
+        // Re-enable the timer
+        GTCCR &= ~(1 << TSM);
+}
+
 void init_input(uint8_t pin, bool toggle_pullup) {
         /*
          * Data Direction Register port B (DDRB)
@@ -186,6 +289,15 @@ bool read_pin(uint8_t pin) {
         return (PINB & (1 << pin)) != 0;
 }
 
+void write_fast_pwm_duty_cycle(uint8_t pin, uint8_t duty_cycle) {
+        if (pin == 0) {
+                OCR0A = duty_cycle;
+        } else if (pin == 1) {
+                OCR0B = duty_cycle;
+        }
+
+}
+
 void write_pin(uint8_t pin, bool high) {
         /*
          * Port B Data Register (PORTB)
@@ -207,11 +319,13 @@ int main(void) {
         init_output(1);
         init_output(3);
         init_input(4, false);
+        init_fast_pwm(true, false);
+
+        write_fast_pwm_duty_cycle(0, 64);
 
         while (1) {
                 if (!read_pin(4)) {
                         led_state = !led_state;
-                        write_pin(0, led_state);
                         write_pin(1, led_state);
                 }
                 write_pin(3, read_adc() > 512);
