@@ -313,23 +313,31 @@ void write_pin(uint8_t pin, bool high) {
 
 int main(void) {
         bool led_state = false;
+        uint16_t ticks_since_last_btn_press = 0;
 
+        // Setup all pins
         init_output(0);
-        init_adc(2);
         init_output(1);
+        init_adc(2);
         init_output(3);
         init_input(4, false);
+
+        // Setup Fast PWM on pin 0
         init_fast_pwm(true, false);
 
         write_fast_pwm_duty_cycle(0, 64);
 
-        while (1) {
-                if (!read_pin(4)) {
+        while (true) {
+                // Poor mans debouncing. Wait at least 500ms before registering
+                // the next button press.
+                if (!read_pin(4) && ticks_since_last_btn_press > 10) {
+                        ticks_since_last_btn_press = 0;
                         led_state = !led_state;
                         write_pin(1, led_state);
                 }
                 write_pin(3, read_adc() > 512);
                 _delay_ms(50);
+                ticks_since_last_btn_press++;
         }
 
         return 0;

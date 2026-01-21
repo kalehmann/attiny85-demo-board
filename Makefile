@@ -1,7 +1,7 @@
 AVRDUDE = avrdude
 AVRDUDE_FLAGS = -c usbtiny -p attiny85
 CC = avr-gcc
-CC_FLAGS = -DF_CPU=8000000 -mmcu=attiny85
+CC_FLAGS = -DF_CPU=1000000 -mmcu=attiny85
 CC_EXTRA_FLAGS = -Wall -Wextra -Werror
 OBJCOPY = avr-objcopy
 
