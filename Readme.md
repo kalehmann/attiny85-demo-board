@@ -11,15 +11,9 @@ In order to gain some low-level experience with the board, the sketch uses only
 
 ### The setup
 
-[![The demo board soldered together and attached to a breadboard][breadboard]][breadboard]
+![The demo board soldered together and attached to a breadboard][breadboard]
 
-<picture>
-    <img
-        src="/images/schematics.svg"
-        alt="Schematics of the demo board including microcontroller and power supply"
-        width="100%"
-    ></img>
-</picture>
+![Schematics of the demo board including microcontroller and power supply][schematics]
 
 ### Project Structure
 
