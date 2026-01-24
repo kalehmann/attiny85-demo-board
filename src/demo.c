@@ -26,8 +26,60 @@
  *               └──────┘
  */
 
+#include <assert.h>
+#include <avr/interrupt.h>
 #include <avr/io.h>
 #include <util/delay.h>
+
+/**
+ * @brief Used by `init_timer1()`, do not set this directly!
+ *
+ * This variable is used by `init_timer1()` to store the pointer to the function
+ * which will be executed periodically.
+ */
+void (*timer1_callback)(void) = NULL;
+
+/**
+ * @brief Used by `init_timer1()`, do not set this directly!
+ *
+ * The callback for timer/counter 1 may be executed with a frequency that is not
+ * an integer divisor of `F_CPU`. In that case timer/counter 1 may count to two
+ * different periods - a lower one and a higher one - to match the given
+ * frequency over a longer time.
+ *
+ * A cycle is defined as the number of times from the timer starting to count
+ * to the lower period until the timer starts the next time counting to the
+ * lower period.
+ *
+ * For example if the timer first counts `10` times to the lower period and then
+ * `5` times to the higher period, before it counts to the lower period again,
+ * the cycle is `15`.
+ *
+ * This variable holds the index in the cycle.
+ */
+uint16_t timer1_cycle_counter = 0;
+
+/**
+ * @brief Used by `init_timer1()`, do not set this directly!
+ *
+ * This is the length of the cycle.
+ */
+uint16_t timer1_cycle_length = 0;
+
+/**
+ * @brief Used by `init_timer1()`, do not set this directly!
+ *
+ * This is the low period, that the counter counts to in its cycle.
+ */
+uint8_t timer1_period_low = 0;
+
+/**
+ * @brief Used by `init_timer1()`, do not set this directly!
+ *
+ * This is how often the counter will count to the low period in its cycle until
+ * it starts counting to the high period.
+ */
+uint16_t timer1_ticks_low = 0;
 
 void init_adc(uint8_t pin) {
         /*
@@ -146,7 +198,7 @@ void init_fast_pwm(bool enableOC0A, bool enableOC0B) {
         GTCCR |= (1 << TSM) | (1 << PSR0);
 
         /*
-         * Timer/Counter Control Register A (TCCR0A)
+         * Timer/Counter 0 Control Register A (TCCR0A)
          *
          * ┌────────┬────────┬────────┬────────┬─────┬─────┬───────┬───────┐
          * │ 7      │ 6      │ 5      │ 4      │ 3   │ 2   │ 1     │ 0     │
@@ -154,7 +206,7 @@ void init_fast_pwm(bool enableOC0A, bool enableOC0B) {
          * │ COM0A1 │ COM0A0 │ COM0B1 │ COM0B0 │     │     │ WGM01 │ WGM00 │
          * └────────┴────────┴────────┴────────┴─────┴─────┴───────┴───────┘
          *
-         * Timer/Counter Control Register B (TCCR0B)
+         * Timer/Counter 0 Control Register B (TCCR0B)
          *
          * ┌───────┬───────┬───────┬───────┬───────┬───────┬───────┬───────┐
          * │ 7     │ 6     │ 5     │ 4     │ 3     │ 2     │ 1     │ 0     │
@@ -278,6 +330,123 @@ void init_output(uint8_t pin) {
         DDRB |= (1 << pin);
 }
 
+/**
+ * @brief Set up periodic execution of a function using timer 1.
+ *
+ * Set up Timer/Counter 1 of the ATTiny85 to execute the callback at the given
+ * frequency. The frequency is limited by the CPU clock speed. At least 255 CPU
+ * cycles should pass between each call of the callback. Otherwise the execution
+ * will be aborted.
+ * The prescaler and output compare registers will be set to match the given
+ * frequency as close as possible, sometimes even with different values for the
+ * output compare registers between calls to the callback to match the given
+ * frequency over a broader period.
+ *
+ * For example with a CPU clock speed of `1 MHz` and a desired frequency of
+ * `2300 Hz`, the prescaler is set to `2` in order the increase the
+ * timer/counter with a frequency of `500 KHz`. Furthermore the output compare
+ * register is set to `217` for `1400` ticks and `218` for `900` ticks each,
+ * because
+ * \f[
+ *     \frac{\nicefrac{1 \text{MHz}}{2}}{217} \cdot \frac{1400}{2300}
+ *     + \frac{\nicefrac{1 \text{MHz}}{2}}{218} \cdot \frac{900}{2300}
+ *     \approx 2300 \text{Hz}
+ * \f]
+ *
+ * @param[in] f_hz     is the frequency of the periodic calls to the function in
+ *                     Hertz.
+ * @param[in] callback is the function to be called periodically.
+ */
+void init_timer1(uint16_t f_hz, void (*callback)(void)) {
+        // Ensure atleast 255 CPU cycles between timer interrupts
+        assert(F_CPU / f_hz > 0xff);
+
+        // Disable interrupts
+        cli();
+
+        /*
+         * Timer/Counter 1 Control Register (TCCR1)
+         *
+         * ┌──────┬───────┬────────┬────────┬──────┬──────┬──────┬──────┐
+         * │ 7    │ 6     │ 5      │ 4      │ 3    │ 2    │ 1    │ 0    │
+         * ├──────┼───────┼────────┼────────┼──────┼──────┼──────┼──────┤
+         * │ CTC1 │ PWM1A │ COM1A1 │ COM1A0 │ CS13 │ CS12 │ CS11 │ CS10 │
+         * └──────┴───────┴────────┴────────┴──────┴──────┴──────┴──────┘
+         * CTC1: Clear Timer/Counter on Compare Match. If set, timer is reset to
+         *       0 after a match against the OCR1C register. Otherwise timer just
+         *       continues.
+         * CS13, CS12, CS11, CS10: Clock Select Bits. Important values:
+         *                         ┌──────┬──────┬──────┬──────┬───────────────┐
+         *                         │ CS13 │ CS12 │ CS11 │ CS10 │               │
+         *                         ├──────┼──────┼──────┼──────┼───────────────┤
+         *                         │ 0    │ 0    │ 0    │ 0    │ Timer stopped │
+         *                         ├──────┼──────┼──────┼──────┼───────────────┤
+         *                         │ 0    │ 0    │ 0    │ 1    │ No prescaling │
+         *                         ├──────┼──────┼──────┼──────┼───────────────┤
+         *                         │ 0    │ 0    │ 1    │ 0    │ F_CPU/2       │
+         *                         ├──────┼──────┼──────┼──────┼───────────────┤
+         *                         │ 0    │ 0    │ 1    │ 1    │ F_CPU/4       │
+         *                         ├──────┼──────┼──────┼──────┼───────────────┤
+         *                         │ ⋮    │ ⋮    │ ⋮    │ ⋮    │ ⋮             │
+         *                         ├──────┼──────┼──────┼──────┼───────────────┤
+         *                         │ 1    │ 1    │ 1    │ 1    │ F_CPU/16384   │
+         *                         └──────┴──────┴──────┴──────┴───────────────┘
+         */
+        TCCR1 = (1 << CTC1);
+
+        /*
+         * Find an optimal configuration for the prescaler and OCR1A/OCR1C
+         * registers to run the timer with the frequency given in the `f_hz`
+         * parameter.
+         */
+
+        uint8_t prescaler_mask = 0x01;
+        uint16_t prescaler = 1;
+
+        // Use 254 here. If 255 is used here, the high period would overflow.
+        while (F_CPU / (prescaler * f_hz) > 254) {
+                prescaler *= 2;
+                prescaler_mask += 1;
+        }
+
+        timer1_callback = callback;
+        timer1_cycle_counter = 0;
+        timer1_cycle_length = f_hz;
+        timer1_period_low = F_CPU / (prescaler * f_hz);
+        timer1_ticks_low = (F_CPU / prescaler) % f_hz;
+
+        // Initialize the Timer/Counter 1 Output compare register A (OCR1A) for
+        // the compare match A interrupt to the low period.
+        OCR1A = timer1_period_low;
+        // Set the Timer/Counter 1 Output compare register C (OCR1C) to the same
+        // value as OCR1A to reset the Timer/Counter 1 after a compare match.
+        // Note, that this only works with the CTC1 bit set in TCCR1 above.
+        OCR1C = timer1_period_low;
+
+        // Clear CS1[3:0]
+        TCCR1 &= 0xf0;
+        TCCR1 |= prescaler_mask;
+
+        /*
+         * Timer/Counter Interrupt Mask Register (TIMSK)
+         * ┌───┬────────┬────────┬────────┬────────┬───────┬───────┬───┐
+         * │ 7 │ 6      │ 5      │ 4      │ 3      │ 2     │ 1     │ 0 │
+         * ├───┼────────┼────────┼────────┼────────┼───────┼───────┼───┤
+         * │   │ OCIE1A │ OCIE1B │ OCIE0A │ OCIE0B │ TOIE1 │ TOIE0 │   │
+         * └───┴────────┴────────┴────────┴────────┴───────┴───────┴───┘
+         *
+         * OCIE1A: Timer/Counter 1 Output Compare Interrupt Enable A
+         * OCIE1B: Timer/Counter 1 Output Compare Interrupt Enable B
+         * TOIE1: Timer/Counter 1 Overflow Interrupt Enable
+         */
+
+        // Enable the interrupt on OCR1A compare match.
+        TIMSK |= (1 << OCIE1A);
+
+        // Re-enable interrupts
+        sei();
+}
+
 uint16_t read_adc(void) {
         unsigned int adc_l = ADCL;
         unsigned int adc_h = ADCH;
@@ -311,9 +480,16 @@ void write_pin(uint8_t pin, bool high) {
         }
 }
 
+void square_wave(void) {
+        static bool wave_active = false;
+
+        write_pin(1, wave_active = !wave_active);
+}
+
 int main(void) {
-        bool led_state = false;
         uint16_t ticks_since_last_btn_press = 0;
+        size_t pin1_f_index = 1;
+        uint16_t pin1_f[] = { 2, 10, 20, 50, 100, 2000 };
 
         // Setup all pins
         init_output(0);
@@ -327,13 +503,20 @@ int main(void) {
 
         write_fast_pwm_duty_cycle(0, 64);
 
+        // Setup timer/counter 1 for a 1 Hz square wave on pin 1.
+        init_timer1(2, &square_wave);
+
         while (true) {
                 // Poor mans debouncing. Wait at least 500ms before registering
                 // the next button press.
                 if (!read_pin(4) && ticks_since_last_btn_press > 10) {
                         ticks_since_last_btn_press = 0;
-                        led_state = !led_state;
-                        write_pin(1, led_state);
+                        if (pin1_f_index >= 5) {
+                                pin1_f_index = 0;
+                        } else {
+                                pin1_f_index++;
+                        }
+                        init_timer1(pin1_f[pin1_f_index], &square_wave);
                 }
                 write_pin(3, read_adc() > 512);
                 _delay_ms(50);
@@ -341,4 +524,36 @@ int main(void) {
         }
 
         return 0;
+}
+
+/**
+ * @brief Service routine for Timer/Counter 1 Compare Match A interrupt.
+ *
+ * Changes the output compare registers between the low and high periods to
+ * match the desired frequency as close as possible.
+ * Also calls @ref timer1_callback if not `NULL`.
+ */
+ISR(TIMER1_COMPA_vect) {
+        if (NULL == timer1_callback) {
+                // Without a callback, the whole logic to match the frequency is
+                // not needed.
+                return;
+        }
+
+        if (timer1_cycle_counter == timer1_ticks_low) {
+                // This is the high period -> one higher than the low period.
+                OCR1A = timer1_period_low + 1;
+                OCR1C = timer1_period_low + 1;
+        }
+
+        timer1_cycle_counter++;
+
+        if (timer1_cycle_counter >= timer1_cycle_length) {
+                // Reset again to the low period.
+                OCR1A = timer1_period_low;
+                OCR1C = timer1_period_low;
+                timer1_cycle_counter = 0;
+        }
+
+        (*timer1_callback)();
 }
