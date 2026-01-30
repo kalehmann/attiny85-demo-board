@@ -1,0 +1,28 @@
+# General
+PROJECT_NAME           = "ATTiny85 Demo Board"
+TAB_SIZE               = 8
+INPUT                  = src docs/index.md
+FILE_PATTERNS          = *.c \
+                         *.md
+RECURSIVE              = YES
+IMAGE_PATH             = images
+
+# Disable LaTeX output
+GENERATE_LATEX         = NO
+
+# HTML output
+GENERATE_HTML          = YES
+HTML_OUTPUT            = _html
+HTML_EXTRA_STYLESHEET  = docs/doxygen-custom.css
+
+# LaTeX formulas in HTML
+USE_MATHJAX            = YES
+MATHJAX_VERSION        = MathJax_4
+MATHJAX_FORMAT         = NativeMML
+MATHJAX_EXTENSIONS     = units
+
+# C related
+OPTIMIZE_OUTPUT_FOR_C  = YES
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+PREDEFINED             = __attribute__(x)=

@@ -3,13 +3,14 @@ AVRDUDE_FLAGS = -c usbtiny -p attiny85
 CC = avr-gcc
 CC_FLAGS = -DF_CPU=1000000 -mmcu=attiny85
 CC_EXTRA_FLAGS = -Wall -Wextra -Werror
+DOXYGEN = doxygen
 OBJCOPY = avr-objcopy
 
 
 BUILD_DIR = build
 DEMO_HEX = $(BUILD_DIR)/demo.hex
 
-.PHONY: all build clean flash
+.PHONY: all build clean docs flash
 
 all: build
 
@@ -25,9 +26,12 @@ $(BUILD_DIR)/%.o: src/%.c
 	@mkdir -p $(@D)
 	$(CC) -c -Os $(CC_FLAGS) $(CC_EXTRA_FLAGS) -o $@ $<
 
+docs:
+	doxygen
+
 flash: build
 	$(AVRDUDE) $(AVRDUDE_FLAGS) -U flash:w:$(DEMO_HEX)
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) _html
 
