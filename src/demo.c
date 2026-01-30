@@ -383,8 +383,8 @@ void init_output(uint8_t pin) {
  * register is set to `217` for `1400` ticks and `218` for `900` ticks each,
  * because
  * \f[
- *     \frac{\nicefrac{1 \text{MHz}}{2}}{217} \cdot \frac{1400}{2300}
- *     + \frac{\nicefrac{1 \text{MHz}}{2}}{218} \cdot \frac{900}{2300}
+ *     \frac{\flatfrac{1 \text{MHz}}{2}}{217} \cdot \frac{1400}{2300}
+ *     + \frac{\flatfrac{1 \text{MHz}}{2}}{218} \cdot \frac{900}{2300}
  *     \approx 2300 \text{Hz}
  * \f]
  *

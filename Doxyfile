@@ -17,9 +17,9 @@ HTML_EXTRA_STYLESHEET  = docs/doxygen-custom.css
 
 # LaTeX formulas in HTML
 USE_MATHJAX            = YES
-MATHJAX_VERSION        = MathJax_4
+MATHJAX_VERSION        = MathJax_3
 MATHJAX_FORMAT         = NativeMML
-MATHJAX_EXTENSIONS     = units
+MATHJAX_EXTENSIONS     = physics
 
 # C related
 OPTIMIZE_OUTPUT_FOR_C  = YES
