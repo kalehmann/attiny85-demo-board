@@ -15,15 +15,21 @@
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-/*
- *  Pinout of the Attiny85
+/**
+ * @file demo.c
+ * @brief Source code for the ATTiny85 Demo Board sketch.
  *
+ *
+ * **Pinout of the Attiny85:**
+ *
+ * ```
  *               ┌──┐┌──┐
  * PB5 (Reset) = │  ╰╯  │ = VCC
  * PB3         = │      │ = PB2
  * PB4         = │      │ = PB1
  * GND         = │      │ = PB0
  *               └──────┘
+ * ```
  */
 
 #include <assert.h>
@@ -81,6 +87,13 @@ uint8_t timer1_period_low = 0;
  */
 uint16_t timer1_ticks_low = 0;
 
+/**
+ * @brief Initializes the Analog Digital Converter (adc) for analog voltage
+ *        reading on the given pin.
+ *
+ * @param[in] pin is the pin used as analog input. Allowed pins are 2, 3, 4
+ *                and 5.
+ */
 void init_adc(uint8_t pin) {
         /*
          * ADC Control and Status Register A (ADCSRA)
@@ -176,6 +189,14 @@ void init_adc(uint8_t pin) {
         ADCSRB = 0;
 }
 
+/**
+ * @brief Setup fast PWM mode.
+ *
+ * @param[in] enableOC0A is whether to enable fast PWM on pin 0 with the duty
+ *                       cycle read from the OCR0A register.
+ * @param[in] enableOC0B is whether to enable fast PWM on pin 1 with the duty
+ *                       cycle read from the OCR0B register.
+ */
 void init_fast_pwm(bool enableOC0A, bool enableOC0B) {
         /*
          * General Timer/Counter Control Register (GTCCR)
@@ -279,6 +300,14 @@ void init_fast_pwm(bool enableOC0A, bool enableOC0B) {
         GTCCR &= ~(1 << TSM);
 }
 
+/**
+ * @brief Initializes a pin as input.
+ *
+ * @param[in] pin           is the pin to toggle as input. Allowed pin numbers
+ *                          are 0, 1, 2, 3, 4 and 5.
+ * @param[in] toggle_pullup is whether to enable the internal pull-up resistor on
+ *                          the given pin.
+ */
 void init_input(uint8_t pin, bool toggle_pullup) {
         /*
          * Data Direction Register port B (DDRB)
@@ -321,6 +350,12 @@ void init_input(uint8_t pin, bool toggle_pullup) {
         }
 }
 
+/**
+ * @brief Initializes a pin as output.
+ *
+ * @param[in] pin is the pin to toggle as output. Allowed pin numbers are 0,
+ *                1, 2, 3, 4 and 5.
+ */
 void init_output(uint8_t pin) {
         if (pin > 5) {
                 return;
@@ -447,6 +482,11 @@ void init_timer1(uint16_t f_hz, void (*callback)(void)) {
         sei();
 }
 
+/**
+ * @brief Reads a 10 bit analog value from the ADC.
+ *
+ * @returns the analog value between 0 (= 0V) and 1024 (= VCC)
+ */
 uint16_t read_adc(void) {
         unsigned int adc_l = ADCL;
         unsigned int adc_h = ADCH;
@@ -454,10 +494,30 @@ uint16_t read_adc(void) {
         return (adc_h << 8) | adc_l;
 }
 
+/**
+ * @brief Reads a pin as input.
+ *
+ * @param[in] pin is the pin to read has input. Note, that the pin has to be
+ *                set as input with `init_input()` beforehand.
+ * @returns `true` if the pin is read high, else `false`.
+ */
 bool read_pin(uint8_t pin) {
         return (PINB & (1 << pin)) != 0;
 }
 
+
+/**
+ * @brief Sets the fast PWM duty cycle for a pin.
+ *
+ * Fast PWM has to be enable beforehand for the given pin with `init_fast_pwm()`.
+ * Otherwise this function has no effect.
+ *
+ * @param[in] pin        is the pin to set the fast PWM duty cycle for. Allowed
+ *                       pins are 0 and 1.
+ * @param[in] duty_cycle is the duty cycle for PWM on that pin. `0` means the
+ *                       pin is always low and `255` means that the pin is
+ *                       always high.
+ */
 void write_fast_pwm_duty_cycle(uint8_t pin, uint8_t duty_cycle) {
         if (pin == 0) {
                 OCR0A = duty_cycle;
@@ -467,6 +527,15 @@ void write_fast_pwm_duty_cycle(uint8_t pin, uint8_t duty_cycle) {
 
 }
 
+/**
+ * @brief Sets a pin as low or high.
+ *
+ * For this function to have any effect, `init_output()` has to be called on the
+ * pin beforehand.
+ *
+ * @param[in] pin  is the pin to toggle.
+ * @param[in] high whether to toggle the pin high or low.
+ */
 void write_pin(uint8_t pin, bool high) {
         /*
          * Port B Data Register (PORTB)
@@ -486,7 +555,10 @@ void square_wave(void) {
         write_pin(1, wave_active = !wave_active);
 }
 
-int main(void) {
+/**
+ * @brief Entrypoint of the sketch.
+ */
+__attribute__((noreturn)) int main(void) {
         uint16_t ticks_since_last_btn_press = 0;
         size_t pin1_f_index = 1;
         uint16_t pin1_f[] = { 2, 10, 20, 50, 100, 2000 };
@@ -522,8 +594,6 @@ int main(void) {
                 _delay_ms(50);
                 ticks_since_last_btn_press++;
         }
-
-        return 0;
 }
 
 /**
