@@ -38,6 +38,26 @@
 #include <util/delay.h>
 
 /**
+ * Operation modes of the demo board.
+ */
+enum Mode {
+        /**
+         * Only yellow LED is active and dimmed by the potentiometer.
+         */
+        DIM = 0,
+        /**
+         * Red and green LEDs are toggled alternating. The frequency is
+         * controlled by the potentiometer.
+         */
+        SQUARE = 1,
+        /**
+         * Sine wave on yellow LED. The frequency is controlled by the
+         * potentiometer.
+         */
+        SINE = 2,
+};
+
+/**
  * @brief Used by `init_timer1()`, do not set this directly!
  *
  * This variable is used by `init_timer1()` to store the pointer to the function
@@ -549,10 +569,70 @@ void write_pin(uint8_t pin, bool high) {
         }
 }
 
+/**
+ * @brief Generates a sine wave on pin 0.
+ *
+ * This function uses a lookup table with 64 values for the sine wave. The
+ * frequency of the sine wave is therefore the frequency, that this function
+ * is called with divided by 64.
+ *
+ * For example to generate a 100 Hz sine wave, this function has to be called
+ * 6400 times a second.
+ */
+void sine_wave(void) {
+        /* Generated with
+         *
+         * ```python
+         * [
+         *     int(math.sin(math.pi/32  * i - math.pi/2) * 127) + 128
+         *     for i in range(64)
+         * ]
+         * ```
+         */
+        static size_t index = 0;
+        static uint8_t sine[64] = { 1, 2, 4, 7, 11, 16, 23, 30, 39, 48, 58, 69,
+                80, 92, 104, 116, 128, 140, 152, 164, 176, 187, 198, 208, 217,
+                226, 233, 240, 245, 249, 252, 254, 255, 254, 252, 249, 245, 240,
+                233, 226, 217, 208, 198, 187, 176, 164, 152, 140, 128, 116, 104,
+                92, 80, 69, 58, 48, 39, 30, 23, 16, 11, 7, 4, 2};
+
+        write_fast_pwm_duty_cycle(0, sine[index++ % 64]);
+}
+
+/**
+ * @brief Generates alternating square waves on pins 1 and 3.
+ *
+ * This function needs two calls per period. Therefore to generate square waves
+ * with a frequency of 100 Hz, this function needs to be called 200 times a
+ * second.
+ */
 void square_wave(void) {
         static bool wave_active = false;
 
-        write_pin(1, wave_active = !wave_active);
+        write_pin(1, wave_active);
+        write_pin(3, !wave_active);
+
+        wave_active = !wave_active;
+}
+
+/**
+ * @brief Switches to the next operation mode.
+ *
+ * @param current_mode is the current operation mode.
+ * @return the next operation mode.
+ */
+enum Mode switch_mode(enum Mode current_mode) {
+        switch (current_mode) {
+        case DIM:
+                write_fast_pwm_duty_cycle(0, 0);
+                return SQUARE;
+        case SQUARE:
+                return SINE;
+        default:
+                init_timer1(1, NULL);
+                return DIM;
+        }
+
 }
 
 /**
@@ -560,8 +640,16 @@ void square_wave(void) {
  */
 __attribute__((noreturn)) int main(void) {
         uint16_t ticks_since_last_btn_press = 0;
-        size_t pin1_f_index = 1;
-        uint16_t pin1_f[] = { 2, 10, 20, 50, 100, 2000 };
+        uint16_t square_freq[] = {
+                2 * 1,  // 1 Hz
+                2 * 5,  // 5 Hz
+                2 * 10, // 10 Hz
+                2 * 25, // 25 Hz
+                2 * 50, // 50 Hz
+                2 * 1000, // 1 kHz
+        };
+
+        enum Mode mode = DIM;
 
         // Setup all pins
         init_output(0);
@@ -572,25 +660,32 @@ __attribute__((noreturn)) int main(void) {
 
         // Setup Fast PWM on pin 0
         init_fast_pwm(true, false);
-
-        write_fast_pwm_duty_cycle(0, 64);
-
-        // Setup timer/counter 1 for a 1 Hz square wave on pin 1.
-        init_timer1(2, &square_wave);
+        write_fast_pwm_duty_cycle(0, 0);
 
         while (true) {
                 // Poor mans debouncing. Wait at least 500ms before registering
                 // the next button press.
                 if (!read_pin(4) && ticks_since_last_btn_press > 10) {
                         ticks_since_last_btn_press = 0;
-                        if (pin1_f_index >= 5) {
-                                pin1_f_index = 0;
-                        } else {
-                                pin1_f_index++;
-                        }
-                        init_timer1(pin1_f[pin1_f_index], &square_wave);
+                        mode = switch_mode(mode);
                 }
-                write_pin(3, read_adc() > 512);
+
+                switch (mode) {
+                case DIM:
+                        write_fast_pwm_duty_cycle(0, read_adc() / 4);
+                        break;
+                case SQUARE:
+                        // `read_adc() / 171` yields a value between 0 and 5,
+                        // suited as index for the `square_freq` array.
+                        init_timer1(square_freq[read_adc() / 171], &square_wave);
+                        break;
+                default:
+                        // Increase the `read_adc()` result by 1 since a
+                        // frequency of zero is not supported.
+                        init_timer1(read_adc() + 1, &sine_wave);
+                        break;
+                }
+
                 _delay_ms(50);
                 ticks_since_last_btn_press++;
         }
